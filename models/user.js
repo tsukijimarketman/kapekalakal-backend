@@ -14,7 +14,7 @@ const userSchema = new mongoose.Schema(
 
     // Optional profile fields
     age: { type: Number },
-    sex: { type: String, enum: ["Male", "Female", "Other"] },
+    sex: { type: String, enum: ["Male", "Female", "Other"], required: false },
     address: { type: String },
     contactNumber: { type: String },
     profileImage: { type: String }, // Can be base64 or URL

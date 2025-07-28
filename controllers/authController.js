@@ -4,40 +4,78 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
 export async function signup(req, res) {
+  console.log("Signup request received:", {
+    firstName: req.body.firstName,
+    lastName: req.body.lastName,
+    email: req.body.email,
+    hasPassword: !!req.body.password,
+  });
+
   const {
     firstName,
     lastName,
     email,
     password,
     age = null,
-    sex = "",
+    sex,
     address = "",
     contactNumber = "",
     profileImage = "",
   } = req.body;
 
   try {
+    // Validate required fields
+    if (!firstName || !lastName || !email || !password) {
+      console.log("Missing required fields:", {
+        firstName,
+        lastName,
+        email,
+        hasPassword: !!password,
+      });
+      return res.status(400).json({
+        success: false,
+        message: "All required fields must be provided",
+      });
+    }
+
     const existingUser = await User.findOne({ email });
-    if (existingUser)
-      return res.status(400).json({ message: "Email already exists!" });
+    if (existingUser) {
+      console.log("Email already exists:", email);
+      return res
+        .status(400)
+        .json({ success: false, message: "Email already exists!" });
+    }
 
     const hashedPassword = await hash(password, 10);
 
-    const user = await User.create({
+    // Prepare user data, excluding sex if it's empty
+    const userData = {
       firstName,
       lastName,
       email,
       password: hashedPassword,
       age,
-      sex,
       address,
       contactNumber,
       profileImage,
-    });
+    };
 
-    res.status(201).json({ message: "User created successfully" });
+    // Only add sex if it has a valid value
+    if (sex && ["Male", "Female", "Other"].includes(sex)) {
+      userData.sex = sex;
+    }
+
+    const user = await User.create(userData);
+
+    console.log("User created successfully:", user._id);
+    res
+      .status(201)
+      .json({ success: true, message: "User created successfully" });
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    console.error("Signup error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 }
 
