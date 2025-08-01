@@ -9,7 +9,17 @@ export async function createProduct(req, res) {
   });
 
   try {
-    const { name, description, price, category, image, stock = 0 } = req.body;
+    const {
+      name,
+      description,
+      price,
+      category,
+      image,
+      stock = 0,
+      isActive: isActiveFromBody = false,
+    } = req.body;
+
+    let isActive = isActiveFromBody;
 
     // Validate required fields
     if (!name || !description || !price || !category || !image) {
@@ -35,6 +45,12 @@ export async function createProduct(req, res) {
       });
     }
 
+    if (parseInt(stock) === 0) {
+      isActive = false;
+    } else {
+      isActive = true;
+    }
+
     // Create the product
     const product = await Product.create({
       name: name.trim(),
@@ -43,6 +59,7 @@ export async function createProduct(req, res) {
       category,
       image: image.trim(),
       stock: parseInt(stock) || 0,
+      isActive,
     });
 
     console.log("Product created successfully:", product._id);
@@ -92,7 +109,10 @@ export async function getAllProducts(req, res) {
 
     // Add search functionality
     if (search.trim()) {
-      query.$text = { $search: search.trim() };
+      query.$or = [
+        { name: { $regex: search.trim(), $options: "i" } },
+        { description: { $regex: search.trim(), $options: "i" } },
+      ];
     }
 
     // Add category filter
@@ -226,6 +246,12 @@ export async function updateProduct(req, res) {
     if (image !== undefined) updateData.image = image.trim();
     if (stock !== undefined) updateData.stock = parseInt(stock) || 0;
     if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+
+    if (parseInt(stock) === 0) {
+      updateData.isActive = false;
+    } else {
+      updateData.isActive = true;
+    }
 
     // Update the product
     const updatedProduct = await Product.findByIdAndUpdate(id, updateData, {
