@@ -48,7 +48,8 @@ export const createTransaction = async (req, res) => {
     const shippingFee = 120; // Static shipping fee
     const totalAmount = itemsSubtotal + vat + shippingFee;
 
-    // Create transaction
+    // Create transaction - NO STOCK SUBTRACTION YET
+    // Stock will only be subtracted when user actually checks out
     const transaction = await Transaction.create({
       customerId,
       items: validatedItems,
@@ -68,7 +69,10 @@ export const createTransaction = async (req, res) => {
       ],
     });
 
-    console.log("Transaction created successfully:", transaction.transactionId);
+    console.log(
+      "Transaction created successfully (stock not yet subtracted):",
+      transaction.transactionId
+    );
     res.status(201).json({
       success: true,
       message: "Transaction created successfully",
@@ -116,7 +120,27 @@ export const checkoutTransaction = async (req, res) => {
       });
     }
 
-    // Update product stock
+    // IMPORTANT: Re-validate stock availability before checkout
+    // This prevents overselling if stock changed while item was in cart
+    for (const item of transaction.items) {
+      const currentProduct = await Product.findById(item.productId);
+
+      if (!currentProduct) {
+        return res.status(404).json({
+          success: false,
+          message: `Product no longer available: ${item.name}`,
+        });
+      }
+
+      if (!currentProduct.isActive || currentProduct.stock < item.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for ${item.name}. Available: ${currentProduct.stock}, Requested: ${item.quantity}`,
+        });
+      }
+    }
+
+    // NOW subtract stock (only when user actually pays/checks out)
     for (const item of transaction.items) {
       await Product.findByIdAndUpdate(item.productId, {
         $inc: { stock: -item.quantity },
@@ -151,7 +175,7 @@ export const checkoutTransaction = async (req, res) => {
     );
 
     console.log(
-      "Transaction checked out successfully:",
+      "Transaction checked out successfully (stock now subtracted):",
       transaction.transactionId
     );
     res.status(200).json({
