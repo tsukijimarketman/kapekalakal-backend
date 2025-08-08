@@ -1,6 +1,7 @@
 import Transaction from "../models/transaction.js";
 import Product from "../models/product.js";
 import User from "../models/user.js";
+import Cart from "../models/cart.js";
 
 // CREATE TRANSACTION - When user adds to cart (goes to "To Pay")
 export const createTransaction = async (req, res) => {
@@ -78,6 +79,12 @@ export const createTransaction = async (req, res) => {
       message: "Transaction created successfully",
       data: transaction,
     });
+
+    const productIds = validatedItems.map((i) => i.productId.toString());
+    await Cart.updateOne(
+      { user: customerId },
+      { $pull: { items: { product: { $in: productIds } } } }
+    );
   } catch (error) {
     console.error("Create transaction error:", error);
     res.status(500).json({
@@ -387,5 +394,135 @@ export const getTransactionById = async (req, res) => {
       success: false,
       message: error.message || "Server error",
     });
+  }
+};
+
+export const createPaidTransaction = async (req, res) => {
+  console.log("Create paid transaction request received:", req.body);
+
+  try {
+    const { items, paymentMethod, shippingAddress, paymentIntentId } = req.body;
+    const customerId = req.user.id;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Items are required" });
+    }
+
+    if (!shippingAddress || typeof shippingAddress !== "string") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Valid shippingAddress is required" });
+    }
+
+    if (!paymentMethod) {
+      return res
+        .status(400)
+        .json({ success: false, message: "paymentMethod is required" });
+    }
+
+    // Validate that all products exist and have enough stock, compute totals
+    let itemsSubtotal = 0;
+    const validatedItems = [];
+
+    for (const item of items) {
+      const product = await Product.findById(item.productId);
+
+      if (!product) {
+        return res.status(404).json({
+          success: false,
+          message: `Product not found: ${item.productId}`,
+        });
+      }
+
+      if (!product.isActive || product.stock < item.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for product: ${product.name}`,
+        });
+      }
+
+      const subtotal = product.price * item.quantity;
+      itemsSubtotal += subtotal;
+
+      validatedItems.push({
+        productId: product._id,
+        name: product.name,
+        price: product.price,
+        quantity: item.quantity,
+        subtotal,
+      });
+    }
+
+    const vat = itemsSubtotal * 0.08; // 8%
+    const shippingFee = 120; // static
+    const totalAmount = itemsSubtotal + vat + shippingFee;
+
+    // Subtract stock now (payment already succeeded)
+    for (const item of validatedItems) {
+      await Product.findByIdAndUpdate(item.productId, {
+        $inc: { stock: -item.quantity },
+      });
+    }
+
+    // Set cancellation deadline (5 minutes from now)
+    const cancellationDeadline = new Date();
+    cancellationDeadline.setMinutes(cancellationDeadline.getMinutes() + 5);
+
+    // Set estimated delivery (2 days from now)
+    const estimatedDelivery = new Date();
+    estimatedDelivery.setDate(estimatedDelivery.getDate() + 2);
+
+    const transaction = await Transaction.create({
+      customerId,
+      items: validatedItems,
+      itemsSubtotal,
+      vat,
+      shippingFee,
+      totalAmount,
+      paymentMethod,
+      paymentIntentId,
+      shippingAddress,
+      status: "to_receive",
+      cancellationDeadline,
+      canCancel: true,
+      deliveryInfo: { estimatedDelivery },
+      statusHistory: [
+        { status: "to_receive", timestamp: new Date(), updatedBy: customerId },
+      ],
+    });
+
+    console.log(
+      "Paid transaction created successfully:",
+      transaction.transactionId
+    );
+    console.log(
+      "Paid transaction created successfully:",
+      transaction.transactionId
+    );
+
+    // Remove purchased items from cart (cleanup)
+    try {
+      const productIds = validatedItems.map((i) => i.productId.toString());
+      await Cart.updateOne(
+        { user: customerId },
+        { $pull: { items: { product: { $in: productIds } } } }
+      );
+    } catch (cleanupErr) {
+      console.error("Cart cleanup after Stripe payment failed:", cleanupErr);
+      // Do not fail the request; transaction already created.
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Transaction created successfully",
+      data: transaction,
+    });
+  } catch (error) {
+    console.error("Create paid transaction error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
   }
 };

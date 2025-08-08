@@ -5,6 +5,7 @@ import {
   cancelTransaction,
   getUserTransactions,
   getTransactionById,
+  createPaidTransaction,
 } from "../controllers/transactionController.js";
 import { authenticateToken } from "../middleware/auth.js";
 
@@ -32,5 +33,9 @@ router.get("/user", getUserTransactions);
 // GET TRANSACTION BY ID - Get specific transaction details
 // GET /api/transactions/:id
 router.get("/:id", getTransactionById);
+
+// CREATE PAID TRANSACTION - When user pays (goes to "To Receive")
+// POST /api/transactions/paid
+router.post("/paid", createPaidTransaction);
 
 export default router;

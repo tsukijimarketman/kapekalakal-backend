@@ -27,6 +27,18 @@ export async function createPaymentIntent({ amount, currency, paymentMethod }) {
   });
 }
 
+export async function createPayment({ amount, currency, sourceId }) {
+  return paymongoAxios.post("/payments", {
+    data: {
+      attributes: {
+        amount,
+        currency,
+        source: { id: sourceId, type: "source" },
+      },
+    },
+  });
+}
+
 export async function createSource({ amount, currency, type, redirectUrl }) {
   return paymongoAxios.post("/sources", {
     data: {

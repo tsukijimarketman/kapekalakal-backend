@@ -40,12 +40,13 @@ const transactionSchema = new mongoose.Schema(
     shippingFee: { type: Number, required: true, default: 120 },
     totalAmount: { type: Number, required: true }, //imtesSubtotal + vat + shippingFee
 
-    //Payment and delivvery information
+    //Payment and delivdelivery information
     paymentMethod: {
       type: String,
-      enum: ["COD", "Paymongo"],
+      enum: ["COD", "Paymongo", "Stripe"],
       required: true,
     },
+    paymentIntentId: { type: String },
     shippingAddress: {
       type: String,
       required: true,
