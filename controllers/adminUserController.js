@@ -91,7 +91,7 @@ export async function createUser(req, res) {
     }
 
     // Handle duplicate key error (email already exists)
-    if (error.code === 11000) {
+    if (error.code === 1) {
       return res.status(400).json({
         success: false,
         message: "User with this email already exists",
@@ -313,7 +313,7 @@ export async function updateUser(req, res) {
     }
 
     // Handle duplicate key error (email already exists)
-    if (error.code === 11000) {
+    if (error.code === 1) {
       return res.status(400).json({
         success: false,
         message: "Email is already taken by another user",

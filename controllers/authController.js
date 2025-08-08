@@ -116,6 +116,7 @@ export async function signin(req, res) {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
+        token,
       },
       redirectTo: getRoleBasedRedirect(user.role),
     });
