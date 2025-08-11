@@ -45,7 +45,7 @@ export async function createSource({ amount, currency, type, redirectUrl }) {
       attributes: {
         amount,
         currency,
-        type, // "gcash", "maya", etc.
+        type, // "gcash", etc.
         redirect: {
           success: redirectUrl,
           failed: redirectUrl,
@@ -53,6 +53,10 @@ export async function createSource({ amount, currency, type, redirectUrl }) {
       },
     },
   });
+}
+
+export async function getSource(sourceId) {
+  return paymongoAxios.get(`/sources/${sourceId}`);
 }
 
 export { paymongoAxios };

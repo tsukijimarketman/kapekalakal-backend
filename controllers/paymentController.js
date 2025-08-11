@@ -3,7 +3,7 @@ import { createSource } from "../services/paymongoService.js";
 import Transaction from "../models/transaction.js";
 import Product from "../models/product.js";
 import Cart from "../models/cart.js";
-import { createPayment } from "../services/paymongoService.js";
+import { createPayment, getSource } from "../services/paymongoService.js";
 
 //POST /api/payment/create
 
@@ -43,7 +43,14 @@ export async function createSourceController(req, res) {
 export async function confirmPaymongoPaymentController(req, res) {
   try {
     const { sourceId, items, shippingAddress } = req.body;
-    const customerId = req.user.id;
+    const customerId = req.user?.id;
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Unauthorized: missing user. Make sure you are logged in and cookies are sent (withCredentials).",
+      });
+    }
 
     if (!Array.isArray(items) || items.length === 0) {
       return res
@@ -62,49 +69,105 @@ export async function confirmPaymongoPaymentController(req, res) {
     for (const item of items) {
       const product = await Product.findById(item.productId);
       if (!product) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-            message: `Product not found: ${item.productId}`,
-          });
+        return res.status(404).json({
+          success: false,
+          message: `Product not found: ${item.productId}`,
+        });
       }
       if (!product.isActive || product.stock < item.quantity) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: `Insufficient stock for product: ${product.name}`,
-          });
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for product: ${product.name}`,
+        });
       }
       const subtotal = product.price * item.quantity;
       itemsSubtotal += subtotal;
       validatedItems.push({
         productId: product._id,
         name: product.name,
+        image: product.image,
         price: product.price,
         quantity: item.quantity,
         subtotal,
       });
     }
+
     const vat = itemsSubtotal * 0.08;
     const shippingFee = 120;
     const totalAmount = itemsSubtotal + vat + shippingFee;
 
-    // Create the PayMongo payment using the source
-    const paymentRes = await createPayment({
-      amount: Math.round(totalAmount * 100) / 100, // if PayMongo expects cents, multiply by 100; else keep PHP amount. Adjust to your current usage.
-      currency: "PHP",
-      sourceId,
-    });
-    const payment = paymentRes.data?.data;
+    // Fetch the source to get canonical amount/currency and status
+    let source;
+    try {
+      const sourceRes = await getSource(sourceId);
+      source = sourceRes?.data?.data;
+    } catch (srcErr) {
+      console.error(
+        "PayMongo getSource error:",
+        srcErr?.response?.data || srcErr
+      );
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch PayMongo source",
+        details: srcErr?.response?.data || srcErr?.message,
+      });
+    }
 
-    // minimal paid check
+    const srcAttrs = source?.attributes || {};
+    const srcStatus = srcAttrs?.status;
+    const srcAmount = srcAttrs?.amount; // already in centavos
+    const srcCurrency = srcAttrs?.currency || "PHP";
+
+    if (!srcAmount || !srcCurrency) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid PayMongo source: missing amount/currency",
+      });
+    }
+
+    // Source must be chargeable after user authorization
+    if (srcStatus !== "chargeable") {
+      return res.status(400).json({
+        success: false,
+        message: `Source not chargeable (status: ${srcStatus})`,
+      });
+    }
+
+    // Optionally validate that server-computed total matches source amount (±1 centavo)
+    const expectedCentavos = Math.round(totalAmount * 100);
+    if (Math.abs(srcAmount - expectedCentavos) > 1) {
+      console.warn(
+        `Warning: PayMongo source amount (${srcAmount}) != computed total (${expectedCentavos})`
+      );
+      // We still proceed using srcAmount as PayMongo requires exact amount matching the source
+    }
+
+    // Create the payment using source's amount and currency
+    let paymentRes;
+    try {
+      paymentRes = await createPayment({
+        amount: srcAmount,
+        currency: srcCurrency,
+        sourceId,
+      });
+    } catch (pmErr) {
+      console.error(
+        "PayMongo createPayment error:",
+        pmErr?.response?.data || pmErr
+      );
+      return res.status(500).json({
+        success: false,
+        message: "Failed to create PayMongo payment",
+        details: pmErr?.response?.data || pmErr?.message,
+      });
+    }
+    const payment = paymentRes.data?.data;
     const status = payment?.attributes?.status;
     if (status !== "paid") {
-      return res
-        .status(400)
-        .json({ success: false, message: "Payment not paid" });
+      return res.status(400).json({
+        success: false,
+        message: `Payment not paid (status: ${status})`,
+      });
     }
 
     // Subtract stock
@@ -129,7 +192,7 @@ export async function confirmPaymongoPaymentController(req, res) {
       shippingFee,
       totalAmount,
       paymentMethod: "Paymongo",
-      paymentIntentId: payment?.id, // PayMongo payment id
+      paymentIntentId: payment?.id,
       shippingAddress,
       status: "to_receive",
       cancellationDeadline,
@@ -147,14 +210,20 @@ export async function confirmPaymongoPaymentController(req, res) {
       { $pull: { items: { product: { $in: productIds } } } }
     );
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Transaction created successfully",
       data: transaction,
     });
   } catch (err) {
-    res
-      .status(500)
-      .json({ success: false, message: err.message || "Server error" });
+    console.error(
+      "confirmPaymongoPaymentController error:",
+      err?.response?.data || err
+    );
+    res.status(500).json({
+      success: false,
+      message: err.message || "Server error",
+      details: err?.response?.data,
+    });
   }
 }

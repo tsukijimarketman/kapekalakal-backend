@@ -56,7 +56,11 @@ productSchema.index({ price: 1 });
 
 // Virtual field for formatted price (not stored in database)
 productSchema.virtual("formattedPrice").get(function () {
-  return `₱${this.price.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+  const priceNum = Number(this.price);
+  if (Number.isFinite(priceNum)) {
+    return `₱${priceNum.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+  }
+  return "₱0.00";
 });
 
 // Ensure virtual fields are included when converting to JSON

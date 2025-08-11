@@ -6,6 +6,7 @@ import {
   getUserTransactions,
   getTransactionById,
   createPaidTransaction,
+  confirmReceipt,
 } from "../controllers/transactionController.js";
 import { authenticateToken } from "../middleware/auth.js";
 
@@ -37,5 +38,9 @@ router.get("/:id", getTransactionById);
 // CREATE PAID TRANSACTION - When user pays (goes to "To Receive")
 // POST /api/transactions/paid
 router.post("/paid", createPaidTransaction);
+
+// CONFIRM RECEIPT - User confirms they received the order; disables cancel and marks completed
+// PUT /api/transactions/:id/confirm-receipt
+router.put("/:id/confirm-receipt", confirmReceipt);
 
 export default router;

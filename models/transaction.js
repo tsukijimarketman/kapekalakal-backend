@@ -28,6 +28,7 @@ const transactionSchema = new mongoose.Schema(
           required: true,
         },
         name: { type: String, required: true }, //Store product name for history
+        image: { type: String },
         price: { type: Number, required: true }, //Price at time of purchase
         quantity: { type: Number, required: true, min: 1 },
         subtotal: { type: Number, required: true }, //price*quantity

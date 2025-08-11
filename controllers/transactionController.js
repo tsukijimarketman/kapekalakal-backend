@@ -38,6 +38,7 @@ export const createTransaction = async (req, res) => {
       validatedItems.push({
         productId: product._id,
         name: product.name,
+        image: (item.image ?? product.image) || "",
         price: product.price,
         quantity: item.quantity,
         subtotal: subtotal,
@@ -48,6 +49,21 @@ export const createTransaction = async (req, res) => {
     const vat = itemsSubtotal * 0.08; // 8% VAT
     const shippingFee = 120; // Static shipping fee
     const totalAmount = itemsSubtotal + vat + shippingFee;
+
+    // Ensure each item has an image (backfill)
+    const PLACEHOLDER = "https://via.placeholder.com/120?text=No+Image";
+    for (let i = 0; i < validatedItems.length; i++) {
+      if (!validatedItems[i].image) {
+        try {
+          const p = await Product.findById(validatedItems[i].productId).select(
+            "image"
+          );
+          validatedItems[i].image = p?.image || PLACEHOLDER;
+        } catch {
+          validatedItems[i].image = PLACEHOLDER;
+        }
+      }
+    }
 
     // Create transaction - NO STOCK SUBTRACTION YET
     // Stock will only be subtracted when user actually checks out
@@ -304,6 +320,30 @@ export const getUserTransactions = async (req, res) => {
     const customerId = req.user.id;
     const { status, page = 1, limit = 10 } = req.query;
 
+    // Auto-transition: if estimatedDelivery has passed, move from 'to_receive' to 'in_transit'
+    try {
+      const now = new Date();
+      await Transaction.updateMany(
+        {
+          customerId,
+          status: "to_receive",
+          "deliveryInfo.estimatedDelivery": { $lte: now },
+        },
+        {
+          $set: { status: "in_transit" },
+          $push: {
+            statusHistory: {
+              status: "in_transit",
+              timestamp: now,
+              updatedBy: customerId,
+            },
+          },
+        }
+      );
+    } catch (autoErr) {
+      console.warn("Auto-transition to in_transit failed:", autoErr.message);
+    }
+
     // Build query
     const query = { customerId };
     if (status && status !== "all") {
@@ -315,14 +355,15 @@ export const getUserTransactions = async (req, res) => {
     const limitNum = parseInt(limit);
 
     // Get transactions with product details
-    const transactions = await Transaction.find(query)
-      .populate("items.productId", "name image category")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum);
+    const [transactions, totalTransactions] = await Promise.all([
+      Transaction.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum),
+      Transaction.countDocuments(query),
+    ]);
 
-    const totalTransactions = await Transaction.countDocuments(query);
-    const totalPages = Math.ceil(totalTransactions / limitNum);
+    const totalPages = Math.ceil(totalTransactions / limitNum) || 1;
 
     console.log(`Found ${transactions.length} transactions for user`);
     res.status(200).json({
@@ -449,6 +490,7 @@ export const createPaidTransaction = async (req, res) => {
       validatedItems.push({
         productId: product._id,
         name: product.name,
+        image: (item.image ?? product.image) || "",
         price: product.price,
         quantity: item.quantity,
         subtotal,
@@ -458,6 +500,21 @@ export const createPaidTransaction = async (req, res) => {
     const vat = itemsSubtotal * 0.08; // 8%
     const shippingFee = 120; // static
     const totalAmount = itemsSubtotal + vat + shippingFee;
+
+    // Ensure each item has an image (backfill)
+    const PLACEHOLDER = "https://via.placeholder.com/120?text=No+Image";
+    for (let i = 0; i < validatedItems.length; i++) {
+      if (!validatedItems[i].image) {
+        try {
+          const p = await Product.findById(validatedItems[i].productId).select(
+            "image"
+          );
+          validatedItems[i].image = p?.image || PLACEHOLDER;
+        } catch {
+          validatedItems[i].image = PLACEHOLDER;
+        }
+      }
+    }
 
     // Subtract stock now (payment already succeeded)
     for (const item of validatedItems) {
@@ -470,9 +527,9 @@ export const createPaidTransaction = async (req, res) => {
     const cancellationDeadline = new Date();
     cancellationDeadline.setMinutes(cancellationDeadline.getMinutes() + 5);
 
-    // Set estimated delivery (2 days from now)
+    // Set estimated delivery (1 day from now)
     const estimatedDelivery = new Date();
-    estimatedDelivery.setDate(estimatedDelivery.getDate() + 2);
+    estimatedDelivery.setDate(estimatedDelivery.getDate() + 1);
 
     const transaction = await Transaction.create({
       customerId,
@@ -497,11 +554,8 @@ export const createPaidTransaction = async (req, res) => {
       "Paid transaction created successfully:",
       transaction.transactionId
     );
-    console.log(
-      "Paid transaction created successfully:",
-      transaction.transactionId
-    );
 
+    console.log("validatedItems", validatedItems);
     // Remove purchased items from cart (cleanup)
     try {
       const productIds = validatedItems.map((i) => i.productId.toString());
@@ -521,6 +575,67 @@ export const createPaidTransaction = async (req, res) => {
     });
   } catch (error) {
     console.error("Create paid transaction error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+};
+
+// CONFIRM RECEIPT - User confirms they received the order; disables cancel and marks completed
+export const confirmReceipt = async (req, res) => {
+  console.log("Confirm receipt request:", req.params.id);
+
+  try {
+    const { id } = req.params;
+    const customerId = req.user.id;
+
+    const transaction = await Transaction.findById(id);
+    if (!transaction) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Transaction not found" });
+    }
+
+    if (transaction.customerId.toString() !== customerId) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Unauthorized access" });
+    }
+
+    if (
+      transaction.status !== "to_receive" &&
+      transaction.status !== "in_transit"
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Transaction cannot be confirmed" });
+    }
+
+    const updated = await Transaction.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          status: "completed",
+          canCancel: false,
+          cancellationDate: new Date(),
+        },
+        $push: {
+          statusHistory: {
+            status: "completed",
+            timestamp: new Date(),
+            updatedBy: customerId,
+          },
+        },
+      },
+      { new: true }
+    );
+
+    console.log("Transaction confirmed received:", updated.transactionId);
+    res
+      .status(200)
+      .json({ success: true, message: "Receipt confirmed", data: updated });
+  } catch (error) {
+    console.error("Confirm receipt error:", error);
     res
       .status(500)
       .json({ success: false, message: error.message || "Server error" });
