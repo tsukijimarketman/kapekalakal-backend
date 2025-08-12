@@ -65,8 +65,14 @@ const transactionSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
+      latitude: { type: Number },
+      longitude: { type: Number },
       pickupPhoto: { type: String }, //Cloudinary URL for pickup photo folder
       deliveryPhoto: { type: String }, //Cloudinary URL for delivery photo folder
+      deliveredAt: { type: Date },
+      adminValidatedDeliveryAt: { type: Date },
+      adminValidatedPickupAt: { type: Date },
+      pickupCompletedAt: { type: Date },
       pickupValidated: { type: Boolean, default: false }, //Admin validation
       deliveryValidated: { type: Boolean, default: false }, //Admin validation
       estimatedDelivery: { type: Date }, //2 Days from checkout
@@ -94,6 +100,11 @@ const transactionSchema = new mongoose.Schema(
 transactionSchema.index({ customerId: 1 });
 transactionSchema.index({ status: 1 });
 transactionSchema.index({ transactionId: 1 });
+transactionSchema.index({
+  "deliveryInfo.assignedDeliveryId": 1,
+  status: 1,
+  createdAt: -1,
+});
 
 //Export the Transaction model
 const Transaction = mongoose.model("Transaction", transactionSchema);

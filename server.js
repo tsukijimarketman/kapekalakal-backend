@@ -11,6 +11,7 @@ import transactionRoutes from "./routes/transactionRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import stripeRoutes from "./routes/stripeRoutes.js";
+import deliveryRoutes from "./routes/deliveryRoutes.js";
 
 //load environment variables
 dotenv.config();
@@ -42,6 +43,7 @@ app.use("/api/transactions", transactionRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/stripe", stripeRoutes);
+app.use("/api/delivery", deliveryRoutes);
 
 //set the port
 const PORT = process.env.PORT || 5000;
