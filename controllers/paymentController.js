@@ -42,7 +42,7 @@ export async function createSourceController(req, res) {
 
 export async function confirmPaymongoPaymentController(req, res) {
   try {
-    const { sourceId, items, shippingAddress } = req.body;
+    const { sourceId, items, shippingAddress, latitude, longitude } = req.body;
     const customerId = req.user?.id;
     if (!customerId) {
       return res.status(401).json({
@@ -181,7 +181,13 @@ export async function confirmPaymongoPaymentController(req, res) {
     const cancellationDeadline = new Date();
     cancellationDeadline.setMinutes(cancellationDeadline.getMinutes() + 5);
     const estimatedDelivery = new Date();
-    estimatedDelivery.setDate(estimatedDelivery.getDate() + 2);
+    estimatedDelivery.setDate(estimatedDelivery.getDate() + 1);
+
+    // Normalize coordinates from body (no metadata)
+    const latNum =
+      latitude !== undefined && latitude !== null ? Number(latitude) : 0;
+    const lonNum =
+      longitude !== undefined && longitude !== null ? Number(longitude) : 0;
 
     // Create transaction
     const transaction = await Transaction.create({
@@ -197,7 +203,11 @@ export async function confirmPaymongoPaymentController(req, res) {
       status: "to_receive",
       cancellationDeadline,
       canCancel: true,
-      deliveryInfo: { estimatedDelivery },
+      deliveryInfo: {
+        estimatedDelivery,
+        latitude: Number.isFinite(latNum) ? latNum : 0,
+        longitude: Number.isFinite(lonNum) ? lonNum : 0,
+      },
       statusHistory: [
         { status: "to_receive", timestamp: new Date(), updatedBy: customerId },
       ],

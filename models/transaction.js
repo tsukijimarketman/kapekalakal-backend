@@ -65,17 +65,17 @@ const transactionSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
-      latitude: { type: Number },
-      longitude: { type: Number },
-      pickupPhoto: { type: String }, //Cloudinary URL for pickup photo folder
-      deliveryPhoto: { type: String }, //Cloudinary URL for delivery photo folder
-      deliveredAt: { type: Date },
-      adminValidatedDeliveryAt: { type: Date },
-      adminValidatedPickupAt: { type: Date },
-      pickupCompletedAt: { type: Date },
+      latitude: { type: Number, default: 0 },
+      longitude: { type: Number, default: 0 },
+      pickupPhoto: { type: String, default: "" }, //Cloudinary URL for pickup photo folder
+      deliveryPhoto: { type: String, default: "" }, //Cloudinary URL for delivery photo folder
+      deliveredAt: { type: Date, default: null },
+      adminValidatedDeliveryAt: { type: Date, default: null },
+      adminValidatedPickupAt: { type: Date, default: null },
+      pickupCompletedAt: { type: Date, default: null },
       pickupValidated: { type: Boolean, default: false }, //Admin validation
       deliveryValidated: { type: Boolean, default: false }, //Admin validation
-      estimatedDelivery: { type: Date }, //2 Days from checkout
+      estimatedDelivery: { type: Date }, //1 Day from checkout
     },
 
     //Cancellation logic (5 minute window)

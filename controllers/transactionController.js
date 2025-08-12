@@ -77,6 +77,10 @@ export const createTransaction = async (req, res) => {
       paymentMethod,
       shippingAddress,
       status: "to_pay",
+      deliveryInfo: {
+        latitude: req.body.latitude,
+        longitude: req.body.longitude,
+      },
       statusHistory: [
         {
           status: "to_pay",
@@ -544,7 +548,11 @@ export const createPaidTransaction = async (req, res) => {
       status: "to_receive",
       cancellationDeadline,
       canCancel: true,
-      deliveryInfo: { estimatedDelivery },
+      deliveryInfo: {
+        estimatedDelivery,
+        latitude: req.body.latitude,
+        longitude: req.body.longitude,
+      },
       statusHistory: [
         { status: "to_receive", timestamp: new Date(), updatedBy: customerId },
       ],
