@@ -1,4 +1,6 @@
 import Transaction from "../models/transaction.js";
+import User from "../models/user.js";
+import cloudinary from "../config/cloudinary.js";
 
 // Fixed delivery fee (PHP)
 export const FIXED_DELIVERY_FEE = 50;
@@ -9,17 +11,20 @@ const pushStatusHistory = (doc, status, userId) => {
   doc.statusHistory.push({ status, updatedBy: userId, timestamp: new Date() });
 };
 
-// RIDER: list available tasks to accept (unassigned in_transit)
+// RIDER: list available tasks to accept (unassigned tasks with status 'to_receive')
 // GET /api/delivery/available
 export const listAvailableTasks = async (req, res) => {
   try {
     const tasks = await Transaction.find({
-      status: "in_transit",
-      "deliveryInfo.assignedDeliveryId": { $exists: false },
+      status: "to_receive",
+      $or: [
+        { "deliveryInfo.assignedDeliveryId": { $exists: false } },
+        { "deliveryInfo.assignedDeliveryId": null },
+      ]
     })
       .sort({ createdAt: -1 })
       .select(
-        "transactionId items itemsSubtotal totalAmount shippingAddress status deliveryInfo.latitude deliveryInfo.longitude createdAt"
+        "transactionId items itemsSubtotal totalAmount shippingAddress status deliveryInfo.latitude deliveryInfo.longitude deliveryInfo.estimatedDelivery createdAt"
       )
       .lean();
 
@@ -41,21 +46,35 @@ export const acceptTask = async (req, res) => {
     const { id } = req.params; // transaction _id
     const riderId = req.user._id;
 
+    // Enforce one active task per rider
+    const existingActive = await Transaction.findOne({
+      "deliveryInfo.assignedDeliveryId": riderId,
+      status: { $in: ["in_transit", "In Transit"] },
+    }).lean();
+    if (existingActive) {
+      return res
+        .status(409)
+        .json({ ok: false, message: "You already have an active task." });
+    }
+
     // Atomic self-assign: only if currently unassigned and in_transit
     const updated = await Transaction.findOneAndUpdate(
       {
         _id: id,
-        status: "in_transit",
         $or: [
           { "deliveryInfo.assignedDeliveryId": { $exists: false } },
           { "deliveryInfo.assignedDeliveryId": null },
         ],
       },
       {
-        $set: { "deliveryInfo.assignedDeliveryId": riderId },
+        $set: {
+          status: "in_transit",
+          "deliveryInfo.assignedDeliveryId": riderId,
+          "deliveryInfo.assignedAt": new Date(),
+        },
         $push: {
           statusHistory: {
-            status: "rider_accepted",
+            status: "in_transit",
             updatedBy: riderId,
             timestamp: new Date(),
           },
@@ -88,6 +107,7 @@ export const getMyTasks = async (req, res) => {
       "deliveryInfo.assignedDeliveryId": riderId,
       status: { $in: ["in_transit", "completed"] },
     })
+      .populate("customerId", "firstName lastName contactNumber")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -108,7 +128,7 @@ export const pickupComplete = async (req, res) => {
     const { id } = req.params;
     const riderId = req.user._id;
 
-    // TODO: handle Cloudinary upload and set deliveryInfo.pickupPhoto
+    // Verify task belongs to rider
     const doc = await Transaction.findOne({
       _id: id,
       "deliveryInfo.assignedDeliveryId": riderId,
@@ -117,15 +137,35 @@ export const pickupComplete = async (req, res) => {
     if (!doc)
       return res.status(404).json({ ok: false, message: "Task not found." });
 
+    // Validate file presence (multer memoryStorage places it in req.file)
+    if (!req.file) {
+      return res.status(400).json({ ok: false, message: "No file uploaded" });
+    }
+
+    // Convert buffer to base64 and upload to Cloudinary
+    const base64Image = `data:${
+      req.file.mimetype
+    };base64,${req.file.buffer.toString("base64")}`;
+    const publicId = `pProof_${riderId}_${id}`;
+    const uploadResult = await cloudinary.uploader.upload(base64Image, {
+      public_id: publicId,
+      folder: "delivery_rider",
+      overwrite: true,
+      resource_type: "image",
+      transformation: [{ quality: "auto", fetch_format: "auto" }],
+    });
+
     doc.deliveryInfo = doc.deliveryInfo || {};
-    // doc.deliveryInfo.pickupPhoto = uploadedUrl; // to be set when Cloudinary is added
+    doc.deliveryInfo.pickupPhoto = uploadResult.secure_url;
     doc.deliveryInfo.pickupCompletedAt = new Date();
     pushStatusHistory(doc, "pickup_completed", riderId);
     await doc.save();
 
-    return res
-      .status(200)
-      .json({ ok: true, message: "Pickup marked complete." });
+    return res.status(200).json({
+      ok: true,
+      message: "Pickup marked complete.",
+      photoUrl: uploadResult.secure_url,
+    });
   } catch (err) {
     return res.status(500).json({ ok: false, message: err.message });
   }
@@ -138,7 +178,7 @@ export const deliveryComplete = async (req, res) => {
     const { id } = req.params;
     const riderId = req.user._id;
 
-    // TODO: handle Cloudinary upload and set deliveryInfo.deliveryPhoto
+    // Verify task belongs to rider
     const doc = await Transaction.findOne({
       _id: id,
       "deliveryInfo.assignedDeliveryId": riderId,
@@ -147,8 +187,24 @@ export const deliveryComplete = async (req, res) => {
     if (!doc)
       return res.status(404).json({ ok: false, message: "Task not found." });
 
+    if (!req.file) {
+      return res.status(400).json({ ok: false, message: "No file uploaded" });
+    }
+
+    const base64Image = `data:${
+      req.file.mimetype
+    };base64,${req.file.buffer.toString("base64")}`;
+    const publicId = `dProof_${riderId}_${id}`;
+    const uploadResult = await cloudinary.uploader.upload(base64Image, {
+      public_id: publicId,
+      folder: "delivery_rider",
+      overwrite: true,
+      resource_type: "image",
+      transformation: [{ quality: "auto", fetch_format: "auto" }],
+    });
+
     doc.deliveryInfo = doc.deliveryInfo || {};
-    // doc.deliveryInfo.deliveryPhoto = uploadedUrl; // to be set when Cloudinary is added
+    doc.deliveryInfo.deliveryPhoto = uploadResult.secure_url;
     doc.deliveryInfo.deliveredAt = new Date();
     pushStatusHistory(doc, "delivery_completed", riderId);
     await doc.save();
@@ -156,6 +212,7 @@ export const deliveryComplete = async (req, res) => {
     return res.status(200).json({
       ok: true,
       message: "Delivery marked complete (awaiting admin validation).",
+      photoUrl: uploadResult.secure_url,
     });
   } catch (err) {
     return res.status(500).json({ ok: false, message: err.message });
@@ -207,6 +264,17 @@ export const validateDelivery = async (req, res) => {
     pushStatusHistory(doc, "completed", adminId);
     await doc.save();
 
+    // Persist rider earnings upon final admin validation
+    const riderId = doc.deliveryInfo?.assignedDeliveryId;
+    if (riderId) {
+      await User.findByIdAndUpdate(riderId, {
+        $inc: {
+          "riderStats.lifetimeEarnings": FIXED_DELIVERY_FEE,
+          "riderStats.totalDeliveries": 1,
+        },
+      });
+    }
+
     return res.status(200).json({
       ok: true,
       message: "Delivery validated and transaction completed.",
@@ -235,5 +303,56 @@ export const listTasks = async (req, res) => {
     return res.status(200).json({ ok: true, data: tasks });
   } catch (err) {
     return res.status(500).json({ ok: false, message: err.message });
+  }
+};
+
+export const getRiderStats = async (req, res) => {
+  try {
+    const riderId = req.user._id;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    //Get total deliveries
+    const totalDeliveries = await Transaction.countDocuments({
+      "deliveryInfo.assignedDeliveryId": riderId,
+      status: "completed",
+    });
+
+    //Get total deliveries
+    const todayDeliveries = await Transaction.countDocuments({
+      "deliveryInfo.assignedDeliveryId": riderId,
+      status: "completed",
+      updatedAt: { $gte: today },
+    });
+
+    //Load persisted stats, fallback to computed
+    const rider = await User.findById(riderId).select("riderStats").lean();
+    const totalEarnings =
+      rider?.riderStats?.lifetimeEarnings ??
+      totalDeliveries * FIXED_DELIVERY_FEE;
+    const todayEarnings = todayDeliveries * FIXED_DELIVERY_FEE;
+
+    //Get recent activity (last 5 deliveries)
+    const recentActivity = await Transaction.find({
+      "deliveryInfo.assignedDeliveryId": riderId,
+    })
+      .sort({ updatedAt: -1 })
+      .limit(5)
+      .select("transactionId status updatedAt deliveryInfo.status")
+      .lean();
+
+    res.json({
+      ok: true,
+      data: {
+        totalDeliveries,
+        todayDeliveries,
+        totalEarnings,
+        todayEarnings,
+        recentActivity,
+      },
+    });
+  } catch (error) {
+    console.error("Error getting rider stats: ", error);
+    return res.status(500).json({ ok: false, message: error.message });
   }
 };

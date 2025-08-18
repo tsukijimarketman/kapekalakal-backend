@@ -18,6 +18,12 @@ const userSchema = new mongoose.Schema(
     address: { type: String },
     contactNumber: { type: String },
     profileImage: { type: String }, // Can be base64 or URL
+
+    // Rider-specific stats (for delivery role)
+    riderStats: {
+      lifetimeEarnings: { type: Number, default: 0 },
+      totalDeliveries: { type: Number, default: 0 },
+    },
   },
   { timestamps: true }
 );

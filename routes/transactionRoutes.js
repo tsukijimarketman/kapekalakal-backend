@@ -7,6 +7,8 @@ import {
   getTransactionById,
   createPaidTransaction,
   confirmReceipt,
+  validatePickup,
+  validateDelivery,
 } from "../controllers/transactionController.js";
 import { authenticateToken } from "../middleware/auth.js";
 
@@ -42,5 +44,13 @@ router.post("/paid", createPaidTransaction);
 // CONFIRM RECEIPT - User confirms they received the order; disables cancel and marks completed
 // PUT /api/transactions/:id/confirm-receipt
 router.put("/:id/confirm-receipt", confirmReceipt);
+
+// VALIDATE PICKUP - Admin validates pickup photo and updates transaction status
+// PUT /api/transactions/:id/validate-pickup
+router.put("/:id/validate-pickup", validatePickup);
+
+// VALIDATE DELIVERY - Admin validates delivery photo and completes transaction
+// PUT /api/transactions/:id/validate-delivery
+router.put("/:id/validate-delivery", validateDelivery);
 
 export default router;
