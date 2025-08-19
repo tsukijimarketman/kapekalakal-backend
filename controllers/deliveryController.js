@@ -20,7 +20,7 @@ export const listAvailableTasks = async (req, res) => {
       $or: [
         { "deliveryInfo.assignedDeliveryId": { $exists: false } },
         { "deliveryInfo.assignedDeliveryId": null },
-      ]
+      ],
     })
       .sort({ createdAt: -1 })
       .select(

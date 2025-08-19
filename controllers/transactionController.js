@@ -326,26 +326,26 @@ export const getTransactionById = async (req, res) => {
       _id: id,
       $or: [
         { customerId: userId },
-        { 'deliveryInfo.assignedDeliveryId': userId }
-      ]
+        { "deliveryInfo.assignedDeliveryId": userId },
+      ],
     });
 
     if (!transaction) {
       return res.status(404).json({
         success: false,
-        message: 'Transaction not found or access denied'
+        message: "Transaction not found or access denied",
       });
     }
 
     res.status(200).json({
       success: true,
-      data: transaction
+      data: transaction,
     });
   } catch (error) {
-    console.error('Get transaction by ID error:', error);
+    console.error("Get transaction by ID error:", error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Server error'
+      message: error.message || "Server error",
     });
   }
 };
@@ -398,7 +398,7 @@ export const getUserTransactions = async (req, res) => {
     console.error("Get user transactions error:", error);
     res.status(500).json({
       success: false,
-      message: error.message || "Server error"
+      message: error.message || "Server error",
     });
   }
 };
