@@ -346,7 +346,7 @@ export const getRiderStats = async (req, res) => {
       data: {
         totalDeliveries,
         todayDeliveries,
-        totalEarnings,
+        lifetimeEarnings: totalEarnings, // Changed from totalEarnings to lifetimeEarnings to match frontend
         todayEarnings,
         recentActivity,
       },
