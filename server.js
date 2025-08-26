@@ -21,17 +21,25 @@ connectDB();
 const app = express();
 
 // CORS configuration
-app.use(
-  cors({
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:5173",
-      "https://kapekalakal-frontend-nu4g.onrender.com",
-      process.env.CLIENT_URL,
-    ].filter(Boolean), // Remove any undefined values
-    credentials: true, // Allow cookies to be sent
-  })
-);
+const corsOptions = {
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://kapekalakal-frontend-nu4g.onrender.com",
+    process.env.CLIENT_URL,
+  ].filter(Boolean),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['set-cookie'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
 app.use(cookieParser()); // Add cookie parser middleware
