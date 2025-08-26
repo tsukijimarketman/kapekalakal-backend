@@ -99,7 +99,6 @@ const transactionSchema = new mongoose.Schema(
 //Create indexes for better query performances
 transactionSchema.index({ customerId: 1 });
 transactionSchema.index({ status: 1 });
-transactionSchema.index({ transactionId: 1 });
 transactionSchema.index({
   "deliveryInfo.assignedDeliveryId": 1,
   status: 1,
