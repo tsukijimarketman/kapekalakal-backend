@@ -38,7 +38,7 @@ export const createPaymentIntentController = async (req, res) => {
       success: false,
       error: "Failed to create payment intent",
       details:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+        process.env.NODE_ENV === "production" ? error.message : undefined,
     });
   }
 };

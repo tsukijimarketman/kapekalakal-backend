@@ -8,7 +8,7 @@ import { createPayment, getSource } from "../services/paymongoService.js";
 // POST /api/payment/create-cod
 // Create a new COD order
 export async function createCodOrderController(req, res) {
-  console.log('COD Order Request:', JSON.stringify(req.body, null, 2));
+  console.log("COD Order Request:", JSON.stringify(req.body, null, 2));
   try {
     const { selectedItems, deliveryAddress } = req.body;
     const customerId = req.user?.id;
@@ -91,7 +91,7 @@ export async function createCodOrderController(req, res) {
     estimatedDelivery.setDate(estimatedDelivery.getDate() + 1);
 
     // Create the transaction
-    console.log('Creating transaction with data:', {
+    console.log("Creating transaction with data:", {
       customerId,
       items: validatedItems,
       itemsSubtotal,
@@ -151,17 +151,20 @@ export async function createCodOrderController(req, res) {
       code: error.code,
       type: typeof error,
       keys: Object.keys(error),
-      ...(error.errors && { errors: error.errors })
+      ...(error.errors && { errors: error.errors }),
     });
-    
+
     res.status(500).json({
       success: false,
       message: `Failed to process COD order: ${error.message}`,
-      error: process.env.NODE_ENV === 'development' ? {
-        message: error.message,
-        stack: error.stack,
-        ...(error.errors && { errors: error.errors })
-      } : undefined,
+      error:
+        process.env.NODE_ENV === "production"
+          ? {
+              message: error.message,
+              stack: error.stack,
+              ...(error.errors && { errors: error.errors }),
+            }
+          : undefined,
     });
   }
 }
