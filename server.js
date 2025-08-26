@@ -26,6 +26,7 @@ app.use(
     origin: [
       "http://localhost:3000",
       "http://localhost:5173",
+      "https://kapekalakal-frontend-nu4g.onrender.com",
       process.env.CLIENT_URL,
     ].filter(Boolean), // Remove any undefined values
     credentials: true, // Allow cookies to be sent
