@@ -3,6 +3,7 @@ import {
   createPaymentIntentController,
   createSourceController,
   confirmPaymongoPaymentController,
+  createCodOrderController,
 } from "../controllers/paymentController.js";
 import { authenticateToken } from "../middleware/auth.js";
 
@@ -11,5 +12,6 @@ const router = Router();
 router.post("/create", createPaymentIntentController);
 router.post("/source", createSourceController);
 router.post("/confirm", authenticateToken, confirmPaymongoPaymentController);
+router.post("/create-cod", authenticateToken, createCodOrderController);
 
 export default router;

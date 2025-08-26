@@ -5,7 +5,168 @@ import Product from "../models/product.js";
 import Cart from "../models/cart.js";
 import { createPayment, getSource } from "../services/paymongoService.js";
 
-//POST /api/payment/create
+// POST /api/payment/create-cod
+// Create a new COD order
+export async function createCodOrderController(req, res) {
+  console.log('COD Order Request:', JSON.stringify(req.body, null, 2));
+  try {
+    const { selectedItems, deliveryAddress } = req.body;
+    const customerId = req.user?.id;
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: Please log in to place an order.",
+      });
+    }
+
+    if (!Array.isArray(selectedItems) || selectedItems.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No items in the order",
+      });
+    }
+
+    // Validate delivery address
+    if (!deliveryAddress?.address) {
+      return res.status(400).json({
+        success: false,
+        message: "Delivery address is required",
+      });
+    }
+
+    // Calculate order totals
+    let itemsSubtotal = 0;
+    const validatedItems = [];
+
+    // Validate products and calculate totals
+    for (const item of selectedItems) {
+      const product = await Product.findById(
+        item.productId?._id || item.productId
+      );
+      if (!product) {
+        return res.status(404).json({
+          success: false,
+          message: `Product not found: ${item.productId}`,
+        });
+      }
+
+      if (product.stock < item.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for ${product.name}`,
+        });
+      }
+
+      const subtotal = product.price * item.quantity;
+      itemsSubtotal += subtotal;
+
+      validatedItems.push({
+        productId: product._id,
+        name: product.name,
+        image: product.image,
+        price: product.price,
+        quantity: item.quantity,
+        subtotal,
+      });
+    }
+
+    const vat = itemsSubtotal * 0.08;
+    const shippingFee = 120;
+    const totalAmount = itemsSubtotal + vat + shippingFee;
+
+    // Update product stock
+    for (const item of validatedItems) {
+      await Product.findByIdAndUpdate(item.productId, {
+        $inc: { stock: -item.quantity },
+      });
+    }
+
+    // Set cancellation deadline (5 minutes from now)
+    const cancellationDeadline = new Date();
+    cancellationDeadline.setMinutes(cancellationDeadline.getMinutes() + 5);
+
+    // Set estimated delivery (1 business day from now)
+    const estimatedDelivery = new Date();
+    estimatedDelivery.setDate(estimatedDelivery.getDate() + 1);
+
+    // Create the transaction
+    console.log('Creating transaction with data:', {
+      customerId,
+      items: validatedItems,
+      itemsSubtotal,
+      vat,
+      shippingFee,
+      totalAmount,
+      paymentMethod: "COD",
+      status: "to_receive",
+      shippingAddress: deliveryAddress.address,
+      deliveryInfo: {
+        estimatedDelivery,
+        status: "pending",
+      },
+      cancellationDeadline,
+      latitude: deliveryAddress.latitude || 0,
+      longitude: deliveryAddress.longitude || 0,
+      contactNumber: deliveryAddress.phone || "",
+    });
+
+    const transaction = await Transaction.create({
+      customerId,
+      items: validatedItems,
+      itemsSubtotal,
+      vat,
+      shippingFee,
+      totalAmount,
+      paymentMethod: "COD",
+      status: "to_receive",
+      shippingAddress: deliveryAddress.address,
+      deliveryInfo: {
+        estimatedDelivery,
+        status: "pending",
+      },
+      cancellationDeadline,
+      latitude: deliveryAddress.latitude || 0,
+      longitude: deliveryAddress.longitude || 0,
+      contactNumber: deliveryAddress.phone || "",
+    });
+
+    // Clear the user's cart
+    await Cart.findOneAndUpdate(
+      { user: customerId },
+      { $set: { items: [] } },
+      { new: true }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Order placed successfully with Cash on Delivery",
+      transactionId: transaction._id,
+    });
+  } catch (error) {
+    console.error("COD Order Error:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code,
+      type: typeof error,
+      keys: Object.keys(error),
+      ...(error.errors && { errors: error.errors })
+    });
+    
+    res.status(500).json({
+      success: false,
+      message: `Failed to process COD order: ${error.message}`,
+      error: process.env.NODE_ENV === 'development' ? {
+        message: error.message,
+        stack: error.stack,
+        ...(error.errors && { errors: error.errors })
+      } : undefined,
+    });
+  }
+}
+
+// POST /api/payment/create
 
 export async function createPaymentIntentController(req, res) {
   try {
